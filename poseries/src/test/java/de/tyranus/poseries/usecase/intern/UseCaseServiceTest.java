@@ -94,18 +94,6 @@ public class UseCaseServiceTest {
 	}
 
 	@Test
-	public void test_getFoundVideoExtensions_ok() {
-		final Set<Path> files = new HashSet<Path>();
-		files.add(Paths.get("tim.avi"));
-		files.add(Paths.get("nochein.avi"));
-		files.add(Paths.get("tim.wmv"));
-		files.add(Paths.get("tim.txt"));
-
-		final Set<String> extensions = useCaseService.getFoundVideoExtensions(files);
-		assertEquals(1, extensions.size());
-	}
-
-	@Test
 	public void test_explodeExtensions_ok() {
 		final Set<String> extensions = new HashSet<String>();
 		extensions.add("avi");

@@ -1,7 +1,10 @@
 package de.tyranus.poseries.usecase.intern;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOError;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.FileVisitor;
@@ -15,12 +18,14 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import de.tyranus.poseries.usecase.PostProcessMode;
 import de.tyranus.poseries.usecase.ProgressObservable;
@@ -35,6 +40,25 @@ import de.tyranus.poseries.usecase.UseCaseServiceException;
  */
 public final class UseCaseServiceImpl implements UseCaseService {
 	private static final Logger LOGGER = LoggerFactory.getLogger(UseCaseServiceImpl.class);
+
+	@Autowired
+	private File localPropertiesFile;
+
+	@Autowired
+	private Properties localProperties;
+
+	private int processParallelCount;
+
+	/**
+	 * Creates the {@link UseCaseServiceImpl}.
+	 * 
+	 * @param processParallelCount
+	 *            Number of parallel threads used during file processing. Each
+	 *            thread processes one file.
+	 */
+	public UseCaseServiceImpl(int processParallelCount) {
+		this.processParallelCount = processParallelCount;
+	}
 
 	/*
 	 * (non-Javadoc)
@@ -178,25 +202,39 @@ public final class UseCaseServiceImpl implements UseCaseService {
 	 * (non-Javadoc)
 	 * 
 	 * @see
-	 * de.tyranus.poseries.usecase.UseCaseService#getFoundVideoExtensions(java
-	 * .util.List)
+	 * de.tyranus.poseries.usecase.UseCaseService#convertFilePatternsToString
+	 * (java.util.Set)
 	 */
-	public Set<String> getFoundVideoExtensions(Set<Path> files) {
-		final Set<String> result = new HashSet<String>();
-		final List<String> extensions = new ArrayList<String>();
-		extensions.add("avi");
-		for (Path file : files) {
-			final String filename = file.getName(file.getNameCount() - 1).toString();
-			final String[] parts = filename.split("\\.");
-			if (parts.length > 1) {
-				final String extension = parts[parts.length - 1];
-				if (extensions.contains(extension)) {
-					result.add(extension);
-				}
+	@Override
+	public String[] convertFilePatternsToString(Set<String[]> extHistory) {
+		final List<String> extensions = new ArrayList<>();
+		for (String[] ext : extHistory) {
+			final String str = arrayToStr(ext);
+			if (!str.isEmpty()) {
+				extensions.add(str);
 			}
-			else {
-				LOGGER.warn("Ignoring file without extension: {}.", filename);
-			}
+		}
+		return extensions.toArray(new String[0]);
+	}
+
+	private String arrayToStr(String[] array) {
+		return Arrays.toString(array).replace(" ", "").replace("[", "").replace("]", "");
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see
+	 * de.tyranus.poseries.usecase.UseCaseService#saveFilePatternHistory(java
+	 * .lang.String[])
+	 */
+	@Override
+	public Set<String[]> saveFilePatternHistory(String[] extHistory) throws UseCaseServiceException {
+		final Set<String[]> result = new HashSet<>();
+		int i = 1;
+		for (String patterns : extHistory) {
+			saveProperty("ext.history." + i++, patterns, "Update file patterns");
+			result.add(patterns.split(","));
 		}
 		return result;
 	}
@@ -250,7 +288,7 @@ public final class UseCaseServiceImpl implements UseCaseService {
 
 		// process files parallel
 		// Runtime.getRuntime().availableProcessors()
-		final ExecutorService exec = Executors.newFixedThreadPool(1);
+		final ExecutorService exec = Executors.newFixedThreadPool(processParallelCount);
 		try {
 			for (final Path src : orderedFiles) {
 				exec.submit(new Runnable() {
@@ -286,6 +324,16 @@ public final class UseCaseServiceImpl implements UseCaseService {
 		}
 		finally {
 			exec.shutdown();
+		}
+	}
+
+	private void saveProperty(String key, String value, String comment) throws UseCaseServiceException {
+		localProperties.setProperty(key, value);
+		try (final OutputStream propOut = new FileOutputStream(localPropertiesFile)) {
+			localProperties.store(propOut, comment);
+		}
+		catch (IOException e) {
+			throw UseCaseServiceException.createWriteErrorProperties(e);
 		}
 	}
 }

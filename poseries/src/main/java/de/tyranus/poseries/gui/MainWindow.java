@@ -2,16 +2,25 @@ package de.tyranus.poseries.gui;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Observable;
 import java.util.Observer;
 import java.util.Set;
 
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.awt.SWT_AWT;
 import org.eclipse.swt.custom.StyledText;
+import org.eclipse.swt.events.FocusAdapter;
+import org.eclipse.swt.events.FocusEvent;
 import org.eclipse.swt.events.MouseEvent;
 import org.eclipse.swt.events.MouseTrackAdapter;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.events.VerifyEvent;
+import org.eclipse.swt.events.VerifyListener;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.DirectoryDialog;
@@ -47,13 +56,18 @@ public class MainWindow implements Observer {
 	private Combo cmbFilePattern;
 	private Label lblFileExtensions;
 	private Button btnRefresh;
-	private Combo cmbSrcPattern;
+	private Text txtSrcPattern;
 	private Label lblSourceDirectoryPattern;
 	private StyledText txtFiles;
 	private Button btnPostProcess;
 	private ProgressBar progressBar;
 
 	private Set<Path> filesToProcess;
+	private Set<String[]> extHistory;
+
+	public MainWindow(Set<String[]> extHistory) {
+		this.extHistory = extHistory;
+	}
 
 	/**
 	 * Launch the application.
@@ -62,7 +76,9 @@ public class MainWindow implements Observer {
 	 */
 	public static void main(String[] args) {
 		try {
-			MainWindow window = new MainWindow();
+			final Set<String[]> extHistory = new HashSet<>();
+			extHistory.add(new String[] { "avi", "mkv" });
+			final MainWindow window = new MainWindow(extHistory);
 			window.open();
 		}
 		catch (Exception e) {
@@ -89,20 +105,16 @@ public class MainWindow implements Observer {
 	 * Create contents of the window.
 	 */
 	protected void createContents() {
-		shell = new Shell();
+		shell = new Shell(SWT.SHELL_TRIM & (~SWT.RESIZE) & (~SWT.MAX));
 		shell.setSize(417, 464);
 		shell.setText(Messages.MainWindow_shell_text);
-
-		cmbFilePattern = new Combo(shell, SWT.NONE);
-		cmbFilePattern.setEnabled(false);
-		cmbFilePattern.setItems(new String[] { "*avi,*mp4" });
-		cmbFilePattern.setBounds(145, 68, 159, 23);
-
-		lblFileExtensions = new Label(shell, SWT.NONE);
-		lblFileExtensions.setToolTipText(Messages.MainWindow_lblFileExtensions_toolTipText);
-		lblFileExtensions.setAlignment(SWT.RIGHT);
-		lblFileExtensions.setBounds(10, 71, 129, 15);
-		lblFileExtensions.setText(Messages.MainWindow_lblFileExtensions_text);
+		final String[] filenamePatterns = useCaseService.convertFilePatternsToString(extHistory);
+		
+				lblSourceDirectory = new Label(shell, SWT.NONE);
+				lblSourceDirectory.setToolTipText(Messages.MainWindow_lblSourceDirectory_toolTipText);
+				lblSourceDirectory.setAlignment(SWT.RIGHT);
+				lblSourceDirectory.setBounds(10, 15, 129, 15);
+				lblSourceDirectory.setText(Messages.MainWindow_lblSourceDirectory_text);
 
 		txtSrcDir = new Text(shell, SWT.BORDER);
 		txtSrcDir.addMouseTrackListener(new MouseTrackAdapter() {
@@ -116,58 +128,107 @@ public class MainWindow implements Observer {
 		btnSrcSelect = new Button(shell, SWT.NONE);
 		btnSrcSelect.setBounds(310, 10, 82, 25);
 		btnSrcSelect.setText(Messages.MainWindow_btnSrcSelect_text);
+				
+						lblSourceDirectoryPattern = new Label(shell, SWT.NONE);
+						lblSourceDirectoryPattern.setAlignment(SWT.RIGHT);
+						lblSourceDirectoryPattern.setBounds(10, 42, 129, 15);
+						lblSourceDirectoryPattern.setText(Messages.MainWindow_lblSourceDirectoryPattern_text);
+		
+				txtSrcPattern = new Text(shell, SWT.BORDER);
+				txtSrcPattern.setEnabled(false);
+				txtSrcPattern.setBounds(145, 39, 159, 23);
+		
+				lblFileExtensions = new Label(shell, SWT.NONE);
+				lblFileExtensions.setToolTipText(Messages.MainWindow_lblFileExtensions_toolTipText);
+				lblFileExtensions.setAlignment(SWT.RIGHT);
+				lblFileExtensions.setBounds(10, 71, 129, 15);
+				lblFileExtensions.setText(Messages.MainWindow_lblFileExtensions_text);
+		
+				cmbFilePattern = new Combo(shell, SWT.NONE);
+				cmbFilePattern.addSelectionListener(new SelectionAdapter() {
+					@Override
+					public void widgetSelected(SelectionEvent e) {
+						if ( cmbFilePattern.getSelectionIndex() >= 0 ) {
+							cmbFilePattern.setText(cmbFilePattern.getItem(cmbFilePattern.getSelectionIndex()).toString());
+						}
+						else {
+							LOGGER.debug("widgetSelected: No file pattern selected.");
+						}
+					}
+				});
+				cmbFilePattern.addFocusListener(new FocusAdapter() {
+					@Override
+					public void focusLost(FocusEvent e) {
+						LOGGER.debug("focusLost");
+						final int maxLen = 5;
+						if (verifyFilePattern(cmbFilePattern.getText())) {
+							final String[] oldPatterns = cmbFilePattern.getItems();
+							final List<String> patterns = new ArrayList<>(Arrays.asList(oldPatterns));
+							int lenItemsNew = (oldPatterns.length == maxLen) ? maxLen : oldPatterns.length + 1;
+							final String[] newPatterns = new String[lenItemsNew];
+							if (!patterns.contains(cmbFilePattern.getText())) {
+								newPatterns[0] = cmbFilePattern.getText();
+								for (int i = 0; i < oldPatterns.length && i<maxLen-1; ++i) {
+									newPatterns[i + 1] = oldPatterns[i];
+								}
 
-		lblSourceDirectory = new Label(shell, SWT.NONE);
-		lblSourceDirectory.setToolTipText(Messages.MainWindow_lblSourceDirectory_toolTipText);
-		lblSourceDirectory.setAlignment(SWT.RIGHT);
-		lblSourceDirectory.setBounds(10, 15, 129, 15);
-		lblSourceDirectory.setText(Messages.MainWindow_lblSourceDirectory_text);
-
-		txtDstDir = new Text(shell, SWT.BORDER);
-		txtDstDir.setEnabled(false);
-		txtDstDir.addMouseTrackListener(new MouseTrackAdapter() {
-			@Override
-			public void mouseHover(MouseEvent e) {
-				txtDstDir.setToolTipText(txtDstDir.getText());
-			}
-		});
-		txtDstDir.setBounds(145, 344, 159, 21);
-
-		lblDestinationDirecory = new Label(shell, SWT.NONE);
-		lblDestinationDirecory.setAlignment(SWT.RIGHT);
-		lblDestinationDirecory.setBounds(10, 347, 129, 15);
-		lblDestinationDirecory.setText(Messages.MainWindow_lblDestinationDirecory_text);
-
-		btnDstSelect = new Button(shell, SWT.NONE);
-		btnDstSelect.setEnabled(false);
-		btnDstSelect.addSelectionListener(new SelectionAdapter() {
-			@Override
-			public void widgetSelected(SelectionEvent e) {
-				selectDestination();
-			}
-		});
-		btnDstSelect.setBounds(310, 342, 82, 25);
-		btnDstSelect.setText(Messages.MainWindow_btnDstSelect_text);
+								try {
+									final Set<String[]> extHistory = useCaseService.saveFilePatternHistory(newPatterns);
+									cmbFilePattern.setItems(useCaseService.convertFilePatternsToString(extHistory));
+									cmbFilePattern.setText(newPatterns[0]);
+								}
+								catch (UseCaseServiceException e1) {
+									// TODO Auto-generated catch block
+									e1.printStackTrace();
+								}
+							}
+						}
+						else {
+							// TODO: TODO
+						}
+					}
+				});
+				cmbFilePattern.setEnabled(false);
+				cmbFilePattern.setItems(filenamePatterns);
+				cmbFilePattern.setText(filenamePatterns[0]);
+				cmbFilePattern.setBounds(145, 68, 159, 23);
 
 		btnRefresh = new Button(shell, SWT.NONE);
 		btnRefresh.setEnabled(false);
 		btnRefresh.setBounds(10, 100, 382, 25);
 		btnRefresh.setText(Messages.MainWindow_btnRefresh_text);
 
-		cmbSrcPattern = new Combo(shell, SWT.NONE);
-		cmbSrcPattern.setEnabled(false);
-		cmbSrcPattern.setBounds(145, 39, 159, 23);
-
-		lblSourceDirectoryPattern = new Label(shell, SWT.NONE);
-		lblSourceDirectoryPattern.setAlignment(SWT.RIGHT);
-		lblSourceDirectoryPattern.setBounds(10, 42, 129, 15);
-		lblSourceDirectoryPattern.setText(Messages.MainWindow_lblSourceDirectoryPattern_text);
-
 		txtFiles = new StyledText(shell, SWT.BORDER | SWT.V_SCROLL);
 		txtFiles.setFont(SWTResourceManager.getFont("Segoe UI", 10, SWT.NORMAL));
 		txtFiles.setDoubleClickEnabled(false);
 		txtFiles.setEditable(false);
 		txtFiles.setBounds(10, 131, 382, 205);
+		
+				lblDestinationDirecory = new Label(shell, SWT.NONE);
+				lblDestinationDirecory.setAlignment(SWT.RIGHT);
+				lblDestinationDirecory.setBounds(10, 347, 129, 15);
+				lblDestinationDirecory.setText(Messages.MainWindow_lblDestinationDirecory_text);
+		
+				txtDstDir = new Text(shell, SWT.BORDER);
+				txtDstDir.setEnabled(false);
+				txtDstDir.addMouseTrackListener(new MouseTrackAdapter() {
+					@Override
+					public void mouseHover(MouseEvent e) {
+						txtDstDir.setToolTipText(txtDstDir.getText());
+					}
+				});
+				txtDstDir.setBounds(145, 344, 159, 21);
+		
+				btnDstSelect = new Button(shell, SWT.NONE);
+				btnDstSelect.setEnabled(false);
+				btnDstSelect.addSelectionListener(new SelectionAdapter() {
+					@Override
+					public void widgetSelected(SelectionEvent e) {
+						selectDestination();
+					}
+				});
+				btnDstSelect.setBounds(310, 342, 82, 25);
+				btnDstSelect.setText(Messages.MainWindow_btnDstSelect_text);
 
 		btnPostProcess = new Button(shell, SWT.NONE);
 		btnPostProcess.addSelectionListener(new SelectionAdapter() {
@@ -239,15 +300,15 @@ public class MainWindow implements Observer {
 				txtFiles.setText(useCaseService.formatFileList(filesToProcess));
 
 				// get the filename pattern
-				final Set<String> extensions = useCaseService.getFoundVideoExtensions(filesToProcess);
-				final String filenamePattern = useCaseService.explodeVideoExtensions(extensions);
-				cmbFilePattern.setText(filenamePattern);
+//				final Set<String> extensions = useCaseService.getFoundVideoExtensions(filesToProcess);
+//				final String filenamePattern = useCaseService.explodeVideoExtensions(extensions);
+//				cmbFilePattern.setText(filenamePattern);
 
 				// Set the text box to the new selection
 				txtSrcDir.setText(finalSrcDir.toString());
 
 				// Set the source dir pattern
-				cmbSrcPattern.setText(srcDirPattern);
+				txtSrcPattern.setText(srcDirPattern);
 
 				// State: SourceSelected
 				state(DlgState.SourceSelected);
@@ -268,7 +329,7 @@ public class MainWindow implements Observer {
 		final Set<String> extensions = useCaseService.implodeVideoExtensions(cmbFilePattern.getText());
 		final Path finalSrcDir = Paths.get(txtSrcDir.getText());
 		try {
-			filesToProcess = useCaseService.findMatchingSrcDirs(finalSrcDir, cmbSrcPattern.getText(), extensions);
+			filesToProcess = useCaseService.findMatchingSrcDirs(finalSrcDir, txtSrcPattern.getText(), extensions);
 
 			// preview matching files
 			txtFiles.setText(useCaseService.formatFileList(filesToProcess));
@@ -337,20 +398,28 @@ public class MainWindow implements Observer {
 		}
 	}
 
+	private boolean filePatternCharAllowed(char c) {
+		final String allowed = "[A-Za-z0-9_-]|,|" + SWT.BS + "|" + SWT.DEL;
+		return String.valueOf(c).matches(allowed);
+	}
+	
+	private boolean verifyFilePattern(String s) {
+		return !(s.isEmpty() || s.endsWith(","));
+	}
+
 	/**
 	 * 
 	 * @param sourceselected
 	 */
 	private void state(DlgState state) {
-		switch (state) {		
+		switch (state) {
 		case Init:
 			txtSrcDir.setEnabled(false);
 			txtSrcDir.setText("");
 			btnSrcSelect.setEnabled(true);
-			cmbSrcPattern.setEnabled(false);
-			cmbSrcPattern.setText("");
+			txtSrcPattern.setEnabled(false);
+			txtSrcPattern.setText("");
 			cmbFilePattern.setEnabled(false);
-			cmbFilePattern.setText("");
 			btnRefresh.setEnabled(false);
 			btnDstSelect.setEnabled(false);
 			txtFiles.setEnabled(false);
@@ -363,7 +432,7 @@ public class MainWindow implements Observer {
 		case Loading:
 			txtSrcDir.setEnabled(false);
 			btnSrcSelect.setEnabled(false);
-			cmbSrcPattern.setEnabled(false);
+			txtSrcPattern.setEnabled(false);
 			cmbFilePattern.setEnabled(false);
 			btnRefresh.setEnabled(false);
 			btnDstSelect.setEnabled(false);
@@ -371,11 +440,11 @@ public class MainWindow implements Observer {
 			txtDstDir.setEnabled(false);
 			btnPostProcess.setEnabled(false);
 			progressBar.setEnabled(false);
-			break;			
+			break;
 		case SourceSelected:
 			txtSrcDir.setEnabled(true);
 			btnSrcSelect.setEnabled(true);
-			cmbSrcPattern.setEnabled(true);
+			txtSrcPattern.setEnabled(true);
 			cmbFilePattern.setEnabled(true);
 			btnRefresh.setEnabled(true);
 			btnDstSelect.setEnabled(true);
@@ -388,7 +457,7 @@ public class MainWindow implements Observer {
 		case DestinationSelected:
 			txtSrcDir.setEnabled(true);
 			btnSrcSelect.setEnabled(true);
-			cmbSrcPattern.setEnabled(true);
+			txtSrcPattern.setEnabled(true);
 			cmbFilePattern.setEnabled(true);
 			btnRefresh.setEnabled(true);
 			btnDstSelect.setEnabled(true);
@@ -400,7 +469,7 @@ public class MainWindow implements Observer {
 		case Done:
 			txtSrcDir.setEnabled(true);
 			btnSrcSelect.setEnabled(true);
-			cmbSrcPattern.setEnabled(true);
+			txtSrcPattern.setEnabled(true);
 			cmbFilePattern.setEnabled(true);
 			btnRefresh.setEnabled(true);
 			btnDstSelect.setEnabled(true);
@@ -418,16 +487,16 @@ public class MainWindow implements Observer {
 	@Override
 	public void update(Observable o, Object arg) {
 		// Invoke display thread and update progress bar.
-		if ( display.isDisposed() ) {
+		if (display.isDisposed()) {
 			return;
 		}
-		display.asyncExec(new Runnable() {			
+		display.asyncExec(new Runnable() {
 			@Override
 			public void run() {
 				progressBar.setSelection(progressBar.getSelection() + 1);
-				shell.update();				
+				shell.update();
 			}
 		});
-		
+
 	}
 }

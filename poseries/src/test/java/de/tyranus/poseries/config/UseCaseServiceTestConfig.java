@@ -10,6 +10,6 @@ import de.tyranus.poseries.usecase.intern.UseCaseServiceImpl;
 public class UseCaseServiceTestConfig {
 	@Bean
 	public UseCaseService useCaseService() {
-		return new UseCaseServiceImpl();
+		return new UseCaseServiceImpl(1);
 	}
 }

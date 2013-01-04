@@ -71,17 +71,23 @@ public interface UseCaseService {
 	String formatFileList(Set<Path> files);
 
 	/**
-	 * Returns an overlieap of the found video extensions from the list of files
-	 * and pre configured video extensions.
+	 * Converts each String array to a comma separated string and adds it to the
+	 * returning string array.
 	 * 
-	 * @param files
-	 *            List of files found in directories that match the directory
-	 *            pattern.
-	 * @return List of file extensions that belong to found files and that are
-	 *         configured as multimedia extensions.
+	 * @param extHistory
+	 *            the historical patterns (ordered as passed in the returning
+	 *            string array).
+	 * @return the converted strings.
 	 */
-	Set<String> getFoundVideoExtensions(Set<Path> files);
+	String[] convertFilePatternsToString(Set<String[]> extHistory);
 
+	/**
+	 * Saves the file pattern history 
+	 * @param extHistory the file pattern history and returns it as a set.
+	 * @throws UseCaseServiceException if the history could not be saved.
+	 */
+	Set<String[]> saveFilePatternHistory(String[] extHistory) throws UseCaseServiceException;
+	
 	/**
 	 * Gets a string representation of the file extensions
 	 * 

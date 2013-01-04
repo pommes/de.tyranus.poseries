@@ -16,4 +16,8 @@ public class UseCaseServiceException extends Exception {
 	public static UseCaseServiceException createCopyMoveError(IOException e, PostProcessMode mode) {
 		return new UseCaseServiceException(String.format("Error during operation '%s': %s", mode, e.getMessage()));
 	}
+
+	public static UseCaseServiceException createWriteErrorProperties(IOException e) {
+		return new UseCaseServiceException(String.format("Can not write local properties: %s", e.getMessage()));
+	}
 }
