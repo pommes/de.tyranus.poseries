@@ -1,5 +1,6 @@
 package de.tyranus.poseries.usecase;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Set;
 
@@ -82,12 +83,15 @@ public interface UseCaseService {
 	String[] convertFilePatternsToString(Set<String[]> extHistory);
 
 	/**
-	 * Saves the file pattern history 
-	 * @param extHistory the file pattern history and returns it as a set.
-	 * @throws UseCaseServiceException if the history could not be saved.
+	 * Saves the file pattern history
+	 * 
+	 * @param extHistory
+	 *            the file pattern history and returns it as a set.
+	 * @throws UseCaseServiceException
+	 *             if the history could not be saved.
 	 */
 	Set<String[]> saveFilePatternHistory(String[] extHistory) throws UseCaseServiceException;
-	
+
 	/**
 	 * Gets a string representation of the file extensions
 	 * 
@@ -122,5 +126,27 @@ public interface UseCaseService {
 	 */
 	void postProcessSeries(Set<Path> sourceFiles, Path dst, PostProcessMode mode, ProgressObservable observable)
 			throws UseCaseServiceException;
+
+	/**
+	 * Returns the size of the filesToProcess in bytes.
+	 * 
+	 * @param filesToProcess
+	 *            the files to process.
+	 * @return the sum of the files in bytes.
+	 * @throws UseCaseServiceException
+	 *             if an {@link IOException} occures during getting the file
+	 *             size of one of the files to process.
+	 */
+	long getFileSize(Set<Path> filesToProcess) throws UseCaseServiceException;
+
+	/**
+	 * Formats the file size to a readable format
+	 * 
+	 * @param fileSize
+	 *            in byte.
+	 * @return human reabable file size in kB if less then 1000, in MB if less
+	 *         then 1000*1000, ...
+	 */
+	String formatSize(long fileSize);
 
 }

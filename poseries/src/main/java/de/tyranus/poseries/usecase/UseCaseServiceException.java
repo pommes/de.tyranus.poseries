@@ -20,4 +20,8 @@ public class UseCaseServiceException extends Exception {
 	public static UseCaseServiceException createWriteErrorProperties(IOException e) {
 		return new UseCaseServiceException(String.format("Can not write local properties: %s", e.getMessage()));
 	}
+
+	public static UseCaseServiceException createFileSizeError(IOException e) {
+		return new UseCaseServiceException(String.format("Can not get size of file: %s", e.getMessage()));		
+	}
 }

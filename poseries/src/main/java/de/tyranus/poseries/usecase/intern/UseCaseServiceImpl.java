@@ -5,13 +5,17 @@ import java.io.FileOutputStream;
 import java.io.IOError;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.channels.FileChannel;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.FileVisitor;
 import java.nio.file.Files;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,6 +26,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import static java.nio.file.StandardCopyOption.*;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -290,30 +295,80 @@ public final class UseCaseServiceImpl implements UseCaseService {
 		// Runtime.getRuntime().availableProcessors()
 		final ExecutorService exec = Executors.newFixedThreadPool(processParallelCount);
 		try {
+			// Calculate the file size
+			final long size = getFileSize(sourceFiles);
+			LOGGER.debug("File size: {} Byte", size);
+			observable.updateTotalSize(size);
+
+			// Process the files
 			for (final Path src : orderedFiles) {
 				exec.submit(new Runnable() {
 					@Override
 					public void run() {
 						// target filename
 						final Path dst = Paths.get(dstPath + "/" + src.getName(src.getNameCount() - 1));
-						LOGGER.debug("processing file to: {}", dst.toString());
+						Thread fileSizeMon = null;
 						try {
+							LOGGER.debug("processing file to: {}", dst.toString());
+
+							// Monitor the target file size
+							fileSizeMon = new Thread(new Runnable() {
+								long lastSize = 0;
+
+								@Override
+								public void run() {
+									boolean isInterrupted = false;
+									while (!isInterrupted) {
+										try {
+											Thread.sleep(1000);
+											final long newSize = Files.size(dst);
+											if (newSize != lastSize) {
+												observable.updateProgress(newSize - lastSize);
+												lastSize = newSize;
+											}
+										}
+										catch (IOException e) {
+											LOGGER.debug("IOException during file size monitoring. This is because the target file was not found yet: {}",
+													e.getMessage());
+										}
+										catch (InterruptedException e) {
+											LOGGER.debug("file size monitoring thread interrupted.");
+											isInterrupted = true;
+										}
+									}
+								}
+							});
+							fileSizeMon.start();
+
+							// Process the file
 							switch (mode) {
+							// TODO: Target directory must be empty!
 							case Copy:
-								Files.copy(src, dst);
+								Files.copy(src, dst, COPY_ATTRIBUTES);
 								break;
 							case Move:
-								Files.move(src, dst);
+								try {
+									// First try a atomic move. Its faster because an inode switch only.
+									Files.move(src, dst, ATOMIC_MOVE, COPY_ATTRIBUTES);
+								}
+								catch (AtomicMoveNotSupportedException e) {
+									LOGGER.debug("Atomic move not supported. Using normal move (copy/delete): {}", e);
+									Files.move(src, dst, COPY_ATTRIBUTES);
+								}
 								break;
 							default:
-								throw new IllegalAccessError(String.format("The mode '%s' is not supported!", mode));
+								throw new UnsupportedOperationException(String
+										.format("The mode '%s' is not supported!", mode));
 							}
 						}
 						catch (IOException e) {
 							throw new IOError(e);
 						}
-
-						observable.updateProgress();
+						finally {
+							if (fileSizeMon != null) {
+								fileSizeMon.interrupt();
+							}
+						}
 					}
 				});
 
@@ -336,4 +391,63 @@ public final class UseCaseServiceImpl implements UseCaseService {
 			throw UseCaseServiceException.createWriteErrorProperties(e);
 		}
 	}
+
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see
+	 * de.tyranus.poseries.usecase.UseCaseService#getFileSize(java.util.Set)
+	 */
+	@Override
+	public long getFileSize(Set<Path> filesToProcess) throws UseCaseServiceException {
+		// Calculate the file size
+		long size = 0;
+		for (final Path file : filesToProcess) {
+			try {
+				size += Files.size(file);
+			}
+			catch (IOException e) {
+				throw UseCaseServiceException.createFileSizeError(e);
+			}
+		}
+		return size;
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see de.tyranus.poseries.usecase.UseCaseService#formatSize(long)
+	 */
+	@Override
+	public String formatSize(long fileSize) {
+		return formatSize(fileSize, Dimension.Byte);
+	}
+
+	enum Dimension {
+		Byte, kB, MB, GB
+	}
+
+	private String formatSize(double fileSize, Dimension dimension) {
+		switch (dimension) {
+		case Byte:
+			if (fileSize >= 1000) {
+				return formatSize(fileSize / 1000., Dimension.kB);
+			}
+			return Math.round(fileSize) + " Byte";
+		case kB:
+			if (fileSize >= 1000) {
+				return formatSize(fileSize / 1000., Dimension.MB);
+			}
+			return Math.round(fileSize) + " kB";
+		case MB:
+			if (fileSize >= 1000) {
+				return formatSize(fileSize / 1000., Dimension.GB);
+			}
+			return Math.round(fileSize) + " MB";
+		default:
+			return Math.round(fileSize) + " GB";
+		}
+
+	}
+
 }

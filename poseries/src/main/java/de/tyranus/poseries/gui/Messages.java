@@ -15,6 +15,16 @@ public class Messages extends NLS {
 	public static String MainWindow_btnPostProcess_text;
 	public static String MainWindow_lblFileExtensions_toolTipText;
 	public static String MainWindow_lblSourceDirectory_toolTipText;
+	public static String MainWindow_btnCopy_text;
+	public static String MainWindow_btnRadioButton_text;
+	public static String MainWindow_lblStep1_text;
+	public static String MainWindow_lblStep2_text;
+	public static String MainWindow_lblStep3_text;
+	public static String MainWindow_lblStep4_text;
+	public static String MainWindow_lblStep5_text;
+	public static String MainWindow_lblStep6_text;
+	public static String MainWindow_lblTotalSize_text;
+	public static String MainWindow_lblSpeed_text;
 	////////////////////////////////////////////////////////////////////////////
 	//
 	// Constructor
