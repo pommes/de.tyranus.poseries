@@ -3,8 +3,12 @@ package de.tyranus.poseries.gui;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Timestamp;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.GregorianCalendar;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Observable;
@@ -81,6 +85,9 @@ public class MainWindow implements Observer {
 
 	private Timestamp startTime;
 	private int currentSizeMb = 0;
+	private int totalSizeMb;
+	private Label lblEnd;
+	private Label lblEndVal;
 
 	public MainWindow(Set<String[]> extHistory) {
 		this.extHistory = extHistory;
@@ -308,14 +315,21 @@ public class MainWindow implements Observer {
 		lblTotalSize.setText(Messages.MainWindow_lblTotalSize_text);
 		
 		lblSpeed = new Label(shell, SWT.NONE);
-		lblSpeed.setBounds(181, 569, 72, 15);
+		lblSpeed.setBounds(177, 569, 59, 15);
 		lblSpeed.setText(Messages.MainWindow_lblSpeed_text);
 		
 		lblTotalSizeVal = new Label(shell, SWT.NONE);
-		lblTotalSizeVal.setBounds(93, 569, 82, 15);
+		lblTotalSizeVal.setBounds(93, 569, 78, 15);
 		
 		lblSpeedVal = new Label(shell, SWT.NONE);
-		lblSpeedVal.setBounds(259, 569, 82, 15);
+		lblSpeedVal.setBounds(243, 569, 82, 15);
+		
+		lblEnd = new Label(shell, SWT.NONE);
+		lblEnd.setBounds(331, 569, 36, 15);
+		lblEnd.setText(Messages.MainWindow_lblEnd_text);
+		
+		lblEndVal = new Label(shell, SWT.NONE);
+		lblEndVal.setBounds(373, 569, 69, 15);
 
 		btnSrcSelect.addSelectionListener(new SelectionAdapter() {
 			@Override
@@ -605,7 +619,7 @@ public class MainWindow implements Observer {
 
 		switch (observable.getType()) {
 		case TotalSize:
-			final int totalSizeMb = (int) (observable.getTotalSize() / 1024 / 1024);
+			totalSizeMb = (int) (observable.getTotalSize() / 1024 / 1024);
 			updateProgressBarMax(totalSizeMb);
 			LOGGER.debug("Total size: {} MB.", totalSizeMb);
 			break;
@@ -618,6 +632,7 @@ public class MainWindow implements Observer {
 				final double mbPerSecond = currentSizeMb / (double) deltaSeconds;
 				if ( mbPerSecond != currentSizeMb ) {
 					updateLblSpeedVal(mbPerSecond * 1024 * 1024);
+					updateLblEndVal(mbPerSecond, currentSizeMb, totalSizeMb);
 					LOGGER.debug("Current processing speed: {} MB/s", mbPerSecond);
 				}
 			}
@@ -662,7 +677,7 @@ public class MainWindow implements Observer {
 		});
 	}
 	
-	private void updateLblSpeedVal(final double mbPerSecond) {
+	private void updateLblSpeedVal(final double bytePerSecond) {
 		// Invoke display thread and update progress bar.
 		if (display.isDisposed()) {
 			return;
@@ -671,7 +686,28 @@ public class MainWindow implements Observer {
 		display.asyncExec(new Runnable() {
 			@Override
 			public void run() {
-				lblSpeedVal.setText(useCaseService.formatSize((long)mbPerSecond) + "/s");
+				lblSpeedVal.setText(useCaseService.formatSize((long)bytePerSecond) + "/s");
+				shell.update();
+				
+			}
+		});
+	}
+	
+	private void updateLblEndVal(final double mbPerSecond, final int currentMb, final int totalMb) {
+		// Invoke display thread and update progress bar.
+		if (display.isDisposed()) {
+			return;
+		}
+		
+		display.asyncExec(new Runnable() {
+			@Override
+			public void run() {
+				final int mbLeft = totalMb - currentMb;
+				final int secondsLeft = mbLeft / (int)mbPerSecond;
+				final Calendar cal = new GregorianCalendar();
+				cal.add(Calendar.SECOND, secondsLeft);
+				DateFormat df = new SimpleDateFormat("HH:mm");
+				lblEndVal.setText(df.format(cal.getTime()));
 				shell.update();
 				
 			}

@@ -25,6 +25,7 @@ public class Messages extends NLS {
 	public static String MainWindow_lblStep6_text;
 	public static String MainWindow_lblTotalSize_text;
 	public static String MainWindow_lblSpeed_text;
+	public static String MainWindow_lblEnd_text;
 	////////////////////////////////////////////////////////////////////////////
 	//
 	// Constructor
