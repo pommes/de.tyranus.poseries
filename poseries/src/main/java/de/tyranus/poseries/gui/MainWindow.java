@@ -2,13 +2,11 @@ package de.tyranus.poseries.gui;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.sql.Timestamp;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
-import java.util.GregorianCalendar;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Observable;
@@ -24,7 +22,6 @@ import org.eclipse.swt.events.MouseTrackAdapter;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Cursor;
-import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.DirectoryDialog;
@@ -39,15 +36,20 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import de.tyranus.poseries.usecase.PostProcessMode;
+import de.tyranus.poseries.usecase.Progress;
+import de.tyranus.poseries.usecase.Progress.Type;
 import de.tyranus.poseries.usecase.ProgressObservable;
-import de.tyranus.poseries.usecase.UseCaseService;
-import de.tyranus.poseries.usecase.UseCaseServiceException;
+import de.tyranus.poseries.usecase.UseCase;
+import de.tyranus.poseries.usecase.UseCaseException;
 
 public class MainWindow implements Observer {
 	private static final Logger LOGGER = LoggerFactory.getLogger(MainWindow.class);
 
+	/** Size of extension list. Must match the properties file. */
+	private static final int EXTENSION_LIST_SIZE = 5;
+
 	@Autowired
-	private UseCaseService useCaseService;
+	private UseCase useCase;
 
 	private Display display;
 	private Shell shell;
@@ -57,7 +59,7 @@ public class MainWindow implements Observer {
 	private Label lblSourceDirectory;
 	private Label lblDestinationDirecory;
 	private Button btnDstSelect;
-	private Combo cmbFilePattern;
+	private Combo cmbFileExtensions;
 	private Label lblFileExtensions;
 	private Button btnRefresh;
 	private Text txtSrcPattern;
@@ -71,7 +73,7 @@ public class MainWindow implements Observer {
 	private Label lblSpeed;
 	private Label lblTotalSizeVal;
 	private Label lblSpeedVal;
-	
+
 	private Cursor cursorWait;
 	private Cursor cursorArrow;
 
@@ -83,9 +85,6 @@ public class MainWindow implements Observer {
 	private Label lblDestinationDir;
 	private Label lblProcess;
 
-	private Timestamp startTime;
-	private int currentSizeMb = 0;
-	private int totalSizeMb;
 	private Label lblEnd;
 	private Label lblEndVal;
 
@@ -135,7 +134,7 @@ public class MainWindow implements Observer {
 		shell.setSize(458, 625);
 		shell.setText(Messages.MainWindow_shell_text);
 		//shell.setImage(new Image(display, "icon.png"));
-		final String[] filenamePatterns = useCaseService.convertFilePatternsToString(extHistory);
+		final String[] filenamePatterns = useCase.convertFileExtensionsToString(extHistory);
 
 		lblSourceDirectory = new Label(shell, SWT.NONE);
 		lblSourceDirectory.setToolTipText(Messages.MainWindow_lblSourceDirectory_toolTipText);
@@ -171,54 +170,30 @@ public class MainWindow implements Observer {
 		lblFileExtensions.setBounds(20, 169, 129, 15);
 		lblFileExtensions.setText(Messages.MainWindow_lblFileExtensions_text);
 
-		cmbFilePattern = new Combo(shell, SWT.NONE);
-		cmbFilePattern.addSelectionListener(new SelectionAdapter() {
+		cmbFileExtensions = new Combo(shell, SWT.NONE);
+		cmbFileExtensions.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(SelectionEvent e) {
-				if (cmbFilePattern.getSelectionIndex() >= 0) {
-					cmbFilePattern.setText(cmbFilePattern.getItem(cmbFilePattern.getSelectionIndex()).toString());
+				if (cmbFileExtensions.getSelectionIndex() >= 0) {
+					cmbFileExtensions.setText(cmbFileExtensions.getItem(cmbFileExtensions.getSelectionIndex())
+							.toString());
 				}
 				else {
 					LOGGER.debug("widgetSelected: No file pattern selected.");
 				}
 			}
 		});
-		cmbFilePattern.addFocusListener(new FocusAdapter() {
+		cmbFileExtensions.addFocusListener(new FocusAdapter() {
 			@Override
 			public void focusLost(FocusEvent e) {
 				LOGGER.debug("focusLost");
-				final int maxLen = 5;
-				if (verifyFilePattern(cmbFilePattern.getText())) {
-					final String[] oldPatterns = cmbFilePattern.getItems();
-					final List<String> patterns = new ArrayList<>(Arrays.asList(oldPatterns));
-					int lenItemsNew = (oldPatterns.length == maxLen) ? maxLen : oldPatterns.length + 1;
-					final String[] newPatterns = new String[lenItemsNew];
-					if (!patterns.contains(cmbFilePattern.getText())) {
-						newPatterns[0] = cmbFilePattern.getText();
-						for (int i = 0; i < oldPatterns.length && i < maxLen - 1; ++i) {
-							newPatterns[i + 1] = oldPatterns[i];
-						}
-
-						try {
-							final Set<String[]> extHistory = useCaseService.saveFilePatternHistory(newPatterns);
-							cmbFilePattern.setItems(useCaseService.convertFilePatternsToString(extHistory));
-							cmbFilePattern.setText(newPatterns[0]);
-						}
-						catch (UseCaseServiceException e1) {
-							// TODO Auto-generated catch block
-							e1.printStackTrace();
-						}
-					}
-				}
-				else {
-					// TODO: TODO
-				}
+				updateExtensionList();
 			}
 		});
-		cmbFilePattern.setEnabled(false);
-		cmbFilePattern.setItems(filenamePatterns);
-		cmbFilePattern.setText(filenamePatterns[0]);
-		cmbFilePattern.setBounds(155, 166, 199, 23);
+		cmbFileExtensions.setEnabled(false);
+		cmbFileExtensions.setItems(filenamePatterns);
+		cmbFileExtensions.setText(filenamePatterns[0]);
+		cmbFileExtensions.setBounds(155, 166, 199, 23);
 
 		btnRefresh = new Button(shell, SWT.NONE);
 		btnRefresh.setEnabled(false);
@@ -261,7 +236,7 @@ public class MainWindow implements Observer {
 		btnPostProcess.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(SelectionEvent e) {
-				postProcessFiles();
+				processFiles();
 			}
 		});
 		btnPostProcess.setEnabled(false);
@@ -309,25 +284,25 @@ public class MainWindow implements Observer {
 		lblProcess.setForeground(SWTResourceManager.getColor(SWT.COLOR_WIDGET_DARK_SHADOW));
 		lblProcess.setBounds(10, 494, 432, 15);
 		lblProcess.setText(Messages.MainWindow_lblStep6_text);
-		
+
 		lblTotalSize = new Label(shell, SWT.NONE);
 		lblTotalSize.setBounds(20, 569, 67, 15);
 		lblTotalSize.setText(Messages.MainWindow_lblTotalSize_text);
-		
+
 		lblSpeed = new Label(shell, SWT.NONE);
 		lblSpeed.setBounds(177, 569, 59, 15);
 		lblSpeed.setText(Messages.MainWindow_lblSpeed_text);
-		
+
 		lblTotalSizeVal = new Label(shell, SWT.NONE);
 		lblTotalSizeVal.setBounds(93, 569, 78, 15);
-		
+
 		lblSpeedVal = new Label(shell, SWT.NONE);
 		lblSpeedVal.setBounds(243, 569, 82, 15);
-		
+
 		lblEnd = new Label(shell, SWT.NONE);
 		lblEnd.setBounds(331, 569, 36, 15);
 		lblEnd.setText(Messages.MainWindow_lblEnd_text);
-		
+
 		lblEndVal = new Label(shell, SWT.NONE);
 		lblEndVal.setBounds(373, 569, 69, 15);
 
@@ -374,17 +349,17 @@ public class MainWindow implements Observer {
 		}
 		else {
 			// find the source dir pattern
-			final String srcDirPattern = useCaseService.findSrcDirPattern(dir);
+			final String srcDirPattern = useCase.findSrcDirPattern(dir);
 
 			// find the final source dir
-			final Path finalSrcDir = useCaseService.createFinalSrcDir(dir);
+			final Path finalSrcDir = useCase.createFinalSrcDir(dir);
 
 			try {
 				// finds the matching files
-				filesToProcess = useCaseService.findMatchingSrcDirs(finalSrcDir, srcDirPattern);
+				filesToProcess = useCase.findMatchingSrcDirs(finalSrcDir, srcDirPattern);
 
 				// preview matching files
-				txtFiles.setText(useCaseService.formatFileList(filesToProcess));
+				txtFiles.setText(useCase.formatFileList(filesToProcess));
 
 				// get the filename pattern
 //				final Set<String> extensions = useCaseService.getFoundVideoExtensions(filesToProcess);
@@ -396,14 +371,14 @@ public class MainWindow implements Observer {
 
 				// Set the source dir pattern
 				txtSrcPattern.setText(srcDirPattern);
-				
+
 				// total file size
-				lblTotalSizeVal.setText(useCaseService.formatSize(useCaseService.getFileSize(filesToProcess)));
+				lblTotalSizeVal.setText(useCase.formatSize(useCase.getFileSize(filesToProcess)));
 
 				// State: SourceSelected
 				state(DlgState.SourceSelected);
 			}
-			catch (UseCaseServiceException e1) {
+			catch (UseCaseException e1) {
 				// TODO Auto-generated catch block
 				e1.printStackTrace();
 				state(DlgState.Init);
@@ -417,18 +392,18 @@ public class MainWindow implements Observer {
 		txtFiles.setText("");
 		shell.update();
 
-		final Set<String> extensions = useCaseService.implodeVideoExtensions(cmbFilePattern.getText());
+		final Set<String> extensions = useCase.implodeVideoExtensions(cmbFileExtensions.getText());
 		final Path finalSrcDir = Paths.get(txtSrcDir.getText());
 		try {
-			filesToProcess = useCaseService.findMatchingSrcDirs(finalSrcDir, txtSrcPattern.getText(), extensions);
+			filesToProcess = useCase.findMatchingSrcDirs(finalSrcDir, txtSrcPattern.getText(), extensions);
 
 			// preview matching files
-			txtFiles.setText(useCaseService.formatFileList(filesToProcess));
-			
+			txtFiles.setText(useCase.formatFileList(filesToProcess));
+
 			// total file size
-			lblTotalSizeVal.setText(useCaseService.formatSize(useCaseService.getFileSize(filesToProcess)));
+			lblTotalSizeVal.setText(useCase.formatSize(useCase.getFileSize(filesToProcess)));
 		}
-		catch (UseCaseServiceException e1) {
+		catch (UseCaseException e1) {
 			// TODO Auto-generated catch block
 			e1.printStackTrace();
 			state(DlgState.Init);
@@ -470,7 +445,7 @@ public class MainWindow implements Observer {
 		}
 	}
 
-	private void postProcessFiles() {
+	private void processFiles() {
 		state(DlgState.Loading);
 		LOGGER.debug("btnPostProcess klicked.");
 
@@ -487,29 +462,17 @@ public class MainWindow implements Observer {
 		// Set proecess mode
 		final PostProcessMode mode = btnMove.isEnabled() ? PostProcessMode.Move : PostProcessMode.Copy;
 
-		// Remember start time for predictions
-		startTime = new Timestamp(System.currentTimeMillis());
-
 		// Do post processing
 		final Path dstPath = Paths.get(txtDstDir.getText());
 		try {
-			useCaseService.postProcessSeries(filesToProcess, dstPath, mode, observable);
+			useCase.processFiles(filesToProcess, dstPath, mode, observable);
 			state(DlgState.Done);
 		}
-		catch (UseCaseServiceException e) {
+		catch (UseCaseException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 			state(DlgState.DestinationSelected);
 		}
-	}
-
-	private boolean filePatternCharAllowed(char c) {
-		final String allowed = "[A-Za-z0-9_-]|,|" + SWT.BS + "|" + SWT.DEL;
-		return String.valueOf(c).matches(allowed);
-	}
-
-	private boolean verifyFilePattern(String s) {
-		return !(s.isEmpty() || s.endsWith(","));
 	}
 
 	/**
@@ -525,7 +488,7 @@ public class MainWindow implements Observer {
 			btnSrcSelect.setEnabled(true);
 			txtSrcPattern.setEnabled(false);
 			txtSrcPattern.setText("");
-			cmbFilePattern.setEnabled(false);
+			cmbFileExtensions.setEnabled(false);
 			btnRefresh.setEnabled(false);
 			btnDstSelect.setEnabled(false);
 			txtFiles.setEnabled(false);
@@ -543,7 +506,7 @@ public class MainWindow implements Observer {
 			txtSrcDir.setEnabled(false);
 			btnSrcSelect.setEnabled(false);
 			txtSrcPattern.setEnabled(false);
-			cmbFilePattern.setEnabled(false);
+			cmbFileExtensions.setEnabled(false);
 			btnRefresh.setEnabled(false);
 			btnDstSelect.setEnabled(false);
 			txtFiles.setEnabled(false);
@@ -558,7 +521,7 @@ public class MainWindow implements Observer {
 			txtSrcDir.setEnabled(true);
 			btnSrcSelect.setEnabled(true);
 			txtSrcPattern.setEnabled(true);
-			cmbFilePattern.setEnabled(true);
+			cmbFileExtensions.setEnabled(true);
 			btnRefresh.setEnabled(true);
 			btnDstSelect.setEnabled(true);
 			txtFiles.setEnabled(true);
@@ -574,7 +537,7 @@ public class MainWindow implements Observer {
 			txtSrcDir.setEnabled(true);
 			btnSrcSelect.setEnabled(true);
 			txtSrcPattern.setEnabled(true);
-			cmbFilePattern.setEnabled(true);
+			cmbFileExtensions.setEnabled(true);
 			btnRefresh.setEnabled(true);
 			btnDstSelect.setEnabled(true);
 			txtFiles.setEnabled(true);
@@ -591,7 +554,7 @@ public class MainWindow implements Observer {
 			btnSrcSelect.setEnabled(true);
 			txtSrcPattern.setEnabled(false);
 			txtSrcPattern.setText("");
-			cmbFilePattern.setEnabled(false);
+			cmbFileExtensions.setEnabled(false);
 			btnRefresh.setEnabled(false);
 			btnDstSelect.setEnabled(false);
 			txtFiles.setEnabled(false);
@@ -609,46 +572,41 @@ public class MainWindow implements Observer {
 		}
 		shell.update();
 	}
-	
+
+	/**
+	 * Called if the
+	 * {@link UseCase#processFiles(Set, Path, PostProcessMode, ProgressObservable)}
+	 * method fires a ProgessObservable to this observer.
+	 * 
+	 * @param o
+	 *            a {@link ProgressObservable}.
+	 * @param arg
+	 *            depends on the {@link Type}.
+	 */
 	@Override
 	public void update(Observable o, Object arg) {
-		if (!(o instanceof ProgressObservable)) {
+		if (arg == null && !(arg instanceof Progress)) {
 			throw new IllegalArgumentException("The Observable must be a ProgressObservable.");
 		}
-		final ProgressObservable observable = (ProgressObservable) o;
+		final Progress progress = (Progress) arg;
+		final int totalSizeMb = (int) (progress.getTotalSize() / 1024 / 1024);
+		asyncUpdateProgressBarMax(totalSizeMb);
 
-		switch (observable.getType()) {
-		case TotalSize:
-			totalSizeMb = (int) (observable.getTotalSize() / 1024 / 1024);
-			updateProgressBarMax(totalSizeMb);
-			LOGGER.debug("Total size: {} MB.", totalSizeMb);
-			break;
-		case DeltaSize:
-			final int deltaSizeMb = (int) (observable.getDeltaSize() / 1024 / 1024);
-			currentSizeMb += deltaSizeMb;
-			// Prediction
-			final long deltaSeconds = (System.currentTimeMillis() - startTime.getTime()) / 1000;
-			if (deltaSeconds > 0) {
-				final double mbPerSecond = currentSizeMb / (double) deltaSeconds;
-				if ( mbPerSecond != currentSizeMb ) {
-					updateLblSpeedVal(mbPerSecond * 1024 * 1024);
-					updateLblEndVal(mbPerSecond, currentSizeMb, totalSizeMb);
-					LOGGER.debug("Current processing speed: {} MB/s", mbPerSecond);
-				}
-			}
-
-			updateProgressBarProgress(deltaSizeMb);
-			LOGGER.debug("Delta size: {} MB.", deltaSizeMb);
-			break;
-		default:
-			throw new UnsupportedOperationException(String.format("The type '%s' is not supported!",
-					observable.getType()));
+		// Prediction
+		if (totalSizeMb > 0 && progress.getDeltaSize() > 0) {
+			asyncUpdateLblSpeedVal(progress.getBytesPerSecond());
+			asyncUpdateLblEndVal(progress.getPredictedEndTime());
+			asyncUpdateProgressBarProgress((int) progress.getDeltaSize() / 1024 / 1024);
 		}
-
 	}
 
-	private void updateProgressBarMax(final int totalSize) {
-		// Invoke display thread and update progress bar.
+	/**
+	 * Invoke display thread and update progress bar max value.
+	 * 
+	 * @param totalSize
+	 *            the new max value.
+	 */
+	private void asyncUpdateProgressBarMax(final int totalSize) {
 		if (display.isDisposed()) {
 			return;
 		}
@@ -660,57 +618,99 @@ public class MainWindow implements Observer {
 			}
 		});
 	}
-	
-	private void updateProgressBarProgress(final int deltaSize) {
-		// Invoke display thread and update progress bar.
+
+	/**
+	 * Invoke display thread and update progress bar.
+	 * 
+	 * @param deltaSize
+	 *            value to add to the progress.
+	 */
+	private void asyncUpdateProgressBarProgress(final int deltaSize) {
 		if (display.isDisposed()) {
 			return;
 		}
-		
 		display.asyncExec(new Runnable() {
 			@Override
 			public void run() {
 				progressBar.setSelection(progressBar.getSelection() + deltaSize);
 				shell.update();
-				
 			}
 		});
 	}
-	
-	private void updateLblSpeedVal(final double bytePerSecond) {
+
+	/**
+	 * Invoke display thread and update the speed value (byte/s).
+	 * 
+	 * @param bytePerSecond
+	 *            the speed value.
+	 */
+	private void asyncUpdateLblSpeedVal(final double bytePerSecond) {
+		if (display.isDisposed()) {
+			return;
+		}
+		display.asyncExec(new Runnable() {
+			@Override
+			public void run() {
+				lblSpeedVal.setText(useCase.formatSize((long) bytePerSecond) + "/s");
+				shell.update();
+
+			}
+		});
+	}
+
+	private void asyncUpdateLblEndVal(final Calendar predictedEndTime) {
 		// Invoke display thread and update progress bar.
 		if (display.isDisposed()) {
 			return;
 		}
-		
 		display.asyncExec(new Runnable() {
 			@Override
 			public void run() {
-				lblSpeedVal.setText(useCaseService.formatSize((long)bytePerSecond) + "/s");
+				final DateFormat df = new SimpleDateFormat("HH:mm");
+				lblEndVal.setText(df.format(predictedEndTime.getTime()));
 				shell.update();
-				
 			}
 		});
 	}
-	
-	private void updateLblEndVal(final double mbPerSecond, final int currentMb, final int totalMb) {
-		// Invoke display thread and update progress bar.
-		if (display.isDisposed()) {
-			return;
+
+	/**
+	 * Updates the file extension list after a extension was entered / edited.
+	 */
+	private void updateExtensionList() {
+		// Remove trailing comma
+		if (cmbFileExtensions.getText().endsWith(",")) {
+			cmbFileExtensions.setText(cmbFileExtensions.getText()
+					.substring(0, cmbFileExtensions.getText().length() - 1));
 		}
-		
-		display.asyncExec(new Runnable() {
-			@Override
-			public void run() {
-				final int mbLeft = totalMb - currentMb;
-				final int secondsLeft = mbLeft / (int)mbPerSecond;
-				final Calendar cal = new GregorianCalendar();
-				cal.add(Calendar.SECOND, secondsLeft);
-				DateFormat df = new SimpleDateFormat("HH:mm");
-				lblEndVal.setText(df.format(cal.getTime()));
-				shell.update();
-				
+		if (!cmbFileExtensions.getText().isEmpty()) {
+			final String[] oldExtensions = cmbFileExtensions.getItems();
+			final List<String> oldExtensionsList = new ArrayList<>(Arrays.asList(oldExtensions));
+			int lenItemsNew = (oldExtensions.length == EXTENSION_LIST_SIZE) ? EXTENSION_LIST_SIZE
+					: oldExtensions.length + 1;
+			final String[] newExtensions = new String[lenItemsNew];
+			if (!oldExtensionsList.contains(cmbFileExtensions.getText())) {
+				newExtensions[0] = cmbFileExtensions.getText();
+
+				// Rotate the extensions in list. Add the first one. Forget the last one.
+				for (int i = 0; i < oldExtensions.length && i < EXTENSION_LIST_SIZE - 1; ++i) {
+					newExtensions[i + 1] = oldExtensions[i];
+				}
+
+				// Save the file extensions
+				try {
+					final Set<String[]> extHistory = useCase.saveFileExtensionHistory(newExtensions);
+					cmbFileExtensions.setItems(useCase.convertFileExtensionsToString(extHistory));
+					cmbFileExtensions.setText(newExtensions[0]);
+				}
+				catch (UseCaseException e) {
+					LOGGER.error("Could not save file extionsion history: {}", e.getMessage());
+				}
 			}
-		});
+			// Do nothing if the new file extensions already exist in the list.
+		}
+		else {
+			LOGGER.warn("The file extensions are set empty. This will not be stored in history.");
+		}
 	}
+
 }

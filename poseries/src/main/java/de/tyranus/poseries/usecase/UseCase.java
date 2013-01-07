@@ -10,7 +10,7 @@ import java.util.Set;
  * @author Tim
  * 
  */
-public interface UseCaseService {
+public interface UseCase {
 
 	/**
 	 * Finds a source directory pattern by the selected source dir.
@@ -40,10 +40,10 @@ public interface UseCaseService {
 	 * @param srcDirPattern
 	 *            The source directory pattern.
 	 * @return Set of matching files.
-	 * @throws UseCaseServiceException
+	 * @throws UseCaseException
 	 *             if an IOException while walking through the directories.
 	 */
-	Set<Path> findMatchingSrcDirs(Path finalSrcDir, String srcDirPattern) throws UseCaseServiceException;
+	Set<Path> findMatchingSrcDirs(Path finalSrcDir, String srcDirPattern) throws UseCaseException;
 
 	/**
 	 * Returns a list of subdirectories of finalSrcDir that matches the source
@@ -56,11 +56,11 @@ public interface UseCaseService {
 	 * @param extensions
 	 *            pre set the file extensions to find.
 	 * @return Set of matching files.
-	 * @throws UseCaseServiceException
+	 * @throws UseCaseException
 	 *             if an IOException while walking through the directories.
 	 */
 	Set<Path> findMatchingSrcDirs(Path finalSrcDir, String srcDirPattern, Set<String> extensions)
-			throws UseCaseServiceException;
+			throws UseCaseException;
 
 	/**
 	 * Formats the found file list.
@@ -80,17 +80,17 @@ public interface UseCaseService {
 	 *            string array).
 	 * @return the converted strings.
 	 */
-	String[] convertFilePatternsToString(Set<String[]> extHistory);
+	String[] convertFileExtensionsToString(Set<String[]> extHistory);
 
 	/**
 	 * Saves the file pattern history
 	 * 
 	 * @param extHistory
 	 *            the file pattern history and returns it as a set.
-	 * @throws UseCaseServiceException
+	 * @throws UseCaseException
 	 *             if the history could not be saved.
 	 */
-	Set<String[]> saveFilePatternHistory(String[] extHistory) throws UseCaseServiceException;
+	Set<String[]> saveFileExtensionHistory(String[] extHistory) throws UseCaseException;
 
 	/**
 	 * Gets a string representation of the file extensions
@@ -122,10 +122,10 @@ public interface UseCaseService {
 	 *            processing mode
 	 * @param observable
 	 *            the observable that notifies progress changes.
-	 * @throws UseCaseServiceException
+	 * @throws UseCaseException
 	 */
-	void postProcessSeries(Set<Path> sourceFiles, Path dst, PostProcessMode mode, ProgressObservable observable)
-			throws UseCaseServiceException;
+	void processFiles(Set<Path> sourceFiles, Path dst, PostProcessMode mode, ProgressObservable observable)
+			throws UseCaseException;
 
 	/**
 	 * Returns the size of the filesToProcess in bytes.
@@ -133,11 +133,11 @@ public interface UseCaseService {
 	 * @param filesToProcess
 	 *            the files to process.
 	 * @return the sum of the files in bytes.
-	 * @throws UseCaseServiceException
+	 * @throws UseCaseException
 	 *             if an {@link IOException} occures during getting the file
 	 *             size of one of the files to process.
 	 */
-	long getFileSize(Set<Path> filesToProcess) throws UseCaseServiceException;
+	long getFileSize(Set<Path> filesToProcess) throws UseCaseException;
 
 	/**
 	 * Formats the file size to a readable format

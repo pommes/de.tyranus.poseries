@@ -26,8 +26,8 @@ import org.springframework.core.io.support.PropertiesLoaderUtils;
 
 import de.tyranus.poseries.App;
 import de.tyranus.poseries.gui.MainWindow;
-import de.tyranus.poseries.usecase.UseCaseService;
-import de.tyranus.poseries.usecase.intern.UseCaseServiceImpl;
+import de.tyranus.poseries.usecase.UseCase;
+import de.tyranus.poseries.usecase.intern.UseCaseImpl;
 
 @Configuration
 /*
@@ -128,8 +128,8 @@ public class PoseriesConfig {
 	}
 
 	@Bean
-	public UseCaseService useCaseService() {
-		return new UseCaseServiceImpl(processParallelCount);
+	public UseCase useCaseService() {
+		return new UseCaseImpl(processParallelCount);
 	}
 	
 	@PostConstruct

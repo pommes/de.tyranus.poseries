@@ -20,8 +20,8 @@ import org.springframework.test.context.support.AnnotationConfigContextLoader;
 import de.tyranus.poseries.config.UseCaseServiceTestConfig;
 import de.tyranus.poseries.usecase.PostProcessMode;
 import de.tyranus.poseries.usecase.ProgressObservable;
-import de.tyranus.poseries.usecase.UseCaseService;
-import de.tyranus.poseries.usecase.UseCaseServiceException;
+import de.tyranus.poseries.usecase.UseCase;
+import de.tyranus.poseries.usecase.UseCaseException;
 
 @RunWith(SpringJUnit4ClassRunner.class)
 @ContextConfiguration(classes = { UseCaseServiceTestConfig.class }, loader = AnnotationConfigContextLoader.class)
@@ -35,7 +35,7 @@ public class UseCaseServiceTest {
 	public final static String DIR_REL_DST_1 = "src/test/resources/data/1/dst";
 
 	@Autowired
-	UseCaseService useCaseService;
+	UseCase useCaseService;
 
 	@Test
 	public void test_findSrcDirPattern_Minus_ok() {
@@ -62,7 +62,7 @@ public class UseCaseServiceTest {
 	}
 
 	@Test
-	public void test_findMatchingSrcDirs_ok() throws UseCaseServiceException {
+	public void test_findMatchingSrcDirs_ok() throws UseCaseException {
 		final File file = new File(DIR_REL_SRC_1);
 		final Path path = Paths.get(file.getAbsolutePath());
 
@@ -71,7 +71,7 @@ public class UseCaseServiceTest {
 	}
 
 	@Test
-	public void test_findMatchingSrcDirsExtensions_ok() throws UseCaseServiceException {
+	public void test_findMatchingSrcDirsExtensions_ok() throws UseCaseException {
 		final File file = new File(DIR_REL_SRC_1);
 		final Path path = Paths.get(file.getAbsolutePath());
 		final Set<String> extensions = new HashSet<>();
@@ -114,13 +114,13 @@ public class UseCaseServiceTest {
 	}
 
 	@Test
-	public void test_postProcessSeries_copy_ok() throws UseCaseServiceException {
+	public void test_postProcessSeries_copy_ok() throws UseCaseException {
 		final Set<Path> files = new HashSet<Path>();
 		files.add(Paths.get(DIR_REL_SRC_1_S05E01_AVI));
 		files.add(Paths.get(DIR_REL_SRC_1_S05E02_AVI));
 		final ProgressObservable observable = new ProgressObservable();
 
-		useCaseService.postProcessSeries(files, Paths.get(DIR_REL_DST_1), PostProcessMode.Copy, observable);
+		useCaseService.processFiles(files, Paths.get(DIR_REL_DST_1), PostProcessMode.Copy, observable);
 
 	}
 }

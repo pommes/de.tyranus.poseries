@@ -1,21 +1,24 @@
 package de.tyranus.poseries.usecase.intern;
 
+import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
+import static java.nio.file.StandardCopyOption.COPY_ATTRIBUTES;
+
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOError;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.FileVisitor;
 import java.nio.file.Files;
-import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,25 +29,26 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import static java.nio.file.StandardCopyOption.*;
 
+import org.joda.time.DateTimeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import de.tyranus.poseries.usecase.PostProcessMode;
+import de.tyranus.poseries.usecase.Progress;
 import de.tyranus.poseries.usecase.ProgressObservable;
-import de.tyranus.poseries.usecase.UseCaseService;
-import de.tyranus.poseries.usecase.UseCaseServiceException;
+import de.tyranus.poseries.usecase.UseCase;
+import de.tyranus.poseries.usecase.UseCaseException;
 
 /**
- * Default implementation of the {@link UseCaseService}.
+ * Default implementation of the {@link UseCase}.
  * 
  * @author Tim
  * 
  */
-public final class UseCaseServiceImpl implements UseCaseService {
-	private static final Logger LOGGER = LoggerFactory.getLogger(UseCaseServiceImpl.class);
+public final class UseCaseImpl implements UseCase {
+	private static final Logger LOGGER = LoggerFactory.getLogger(UseCaseImpl.class);
 
 	@Autowired
 	private File localPropertiesFile;
@@ -55,13 +59,13 @@ public final class UseCaseServiceImpl implements UseCaseService {
 	private int processParallelCount;
 
 	/**
-	 * Creates the {@link UseCaseServiceImpl}.
+	 * Creates the {@link UseCaseImpl}.
 	 * 
 	 * @param processParallelCount
 	 *            Number of parallel threads used during file processing. Each
 	 *            thread processes one file.
 	 */
-	public UseCaseServiceImpl(int processParallelCount) {
+	public UseCaseImpl(int processParallelCount) {
 		this.processParallelCount = processParallelCount;
 	}
 
@@ -105,7 +109,7 @@ public final class UseCaseServiceImpl implements UseCaseService {
 	 * de.tyranus.poseries.usecase.UseCase#findMatchingSrcDirs(java.nio.file.Path
 	 * ,java.lang.String)
 	 */
-	public Set<Path> findMatchingSrcDirs(Path finalSrcDir, String srcDirPattern) throws UseCaseServiceException {
+	public Set<Path> findMatchingSrcDirs(Path finalSrcDir, String srcDirPattern) throws UseCaseException {
 		return findMatchingSrcDirs(finalSrcDir, srcDirPattern, null);
 	}
 
@@ -118,7 +122,7 @@ public final class UseCaseServiceImpl implements UseCaseService {
 	 */
 	@Override
 	public Set<Path> findMatchingSrcDirs(Path finalSrcDir, String srcDirPattern, Set<String> extensions)
-			throws UseCaseServiceException {
+			throws UseCaseException {
 
 		// If no extensions are set use '*' as all extension
 		final StringBuilder sbExtensions = new StringBuilder();
@@ -174,7 +178,7 @@ public final class UseCaseServiceImpl implements UseCaseService {
 			});
 		}
 		catch (IOException e) {
-			throw UseCaseServiceException.createReadError(e);
+			throw UseCaseException.createReadError(e);
 		}
 		return matchingDirs;
 	}
@@ -211,7 +215,7 @@ public final class UseCaseServiceImpl implements UseCaseService {
 	 * (java.util.Set)
 	 */
 	@Override
-	public String[] convertFilePatternsToString(Set<String[]> extHistory) {
+	public String[] convertFileExtensionsToString(Set<String[]> extHistory) {
 		final List<String> extensions = new ArrayList<>();
 		for (String[] ext : extHistory) {
 			final String str = arrayToStr(ext);
@@ -234,7 +238,7 @@ public final class UseCaseServiceImpl implements UseCaseService {
 	 * .lang.String[])
 	 */
 	@Override
-	public Set<String[]> saveFilePatternHistory(String[] extHistory) throws UseCaseServiceException {
+	public Set<String[]> saveFileExtensionHistory(String[] extHistory) throws UseCaseException {
 		final Set<String[]> result = new HashSet<>();
 		int i = 1;
 		for (String patterns : extHistory) {
@@ -283,10 +287,10 @@ public final class UseCaseServiceImpl implements UseCaseService {
 	 * java.util.Path,
 	 * de.tyranus.poseries.usecase.PostProcessMode)
 	 */
-	public void postProcessSeries(final Set<Path> sourceFiles,
+	public void processFiles(final Set<Path> sourceFiles,
 			final Path dstPath,
 			final PostProcessMode mode,
-			final ProgressObservable observable) throws UseCaseServiceException {
+			final ProgressObservable observable) throws UseCaseException {
 		// sort files
 		final List<Path> orderedFiles = new ArrayList<>(sourceFiles);
 		Collections.sort(orderedFiles);
@@ -296,9 +300,12 @@ public final class UseCaseServiceImpl implements UseCaseService {
 		final ExecutorService exec = Executors.newFixedThreadPool(processParallelCount);
 		try {
 			// Calculate the file size
-			final long size = getFileSize(sourceFiles);
-			LOGGER.debug("File size: {} Byte", size);
-			observable.updateTotalSize(size);
+			final long totalSize = getFileSize(sourceFiles);
+			final long startTimeMillis = DateTimeUtils.currentTimeMillis();
+			// Init progress object
+			final Progress progress = new Progress(startTimeMillis, totalSize);
+			LOGGER.debug("File size: {} Byte", totalSize);
+			observable.updateTotalSize(progress);
 
 			// Process the files
 			for (final Path src : orderedFiles) {
@@ -311,40 +318,41 @@ public final class UseCaseServiceImpl implements UseCaseService {
 						try {
 							LOGGER.debug("processing file to: {}", dst.toString());
 
-							// Monitor the target file size
-							fileSizeMon = new Thread(new Runnable() {
-								long lastSize = 0;
-
-								@Override
-								public void run() {
-									boolean isInterrupted = false;
-									while (!isInterrupted) {
-										try {
-											Thread.sleep(1000);
-											final long newSize = Files.size(dst);
-											if (newSize != lastSize) {
-												observable.updateProgress(newSize - lastSize);
-												lastSize = newSize;
-											}
-										}
-										catch (IOException e) {
-											LOGGER.debug("IOException during file size monitoring. This is because the target file was not found yet: {}",
-													e.getMessage());
-										}
-										catch (InterruptedException e) {
-											LOGGER.debug("file size monitoring thread interrupted.");
-											isInterrupted = true;
-										}
-									}
-								}
-							});
-							fileSizeMon.start();
+//							// Monitor the target file size
+//							fileSizeMon = new Thread(new Runnable() {
+//								long lastSize = 0;
+//
+//								@Override
+//								public void run() {
+//									boolean isInterrupted = false;
+//									while (!isInterrupted) {
+//										try {
+//											Thread.sleep(1000);
+//											final long newSize = Files.size(dst);
+//											if (newSize != lastSize) {
+//												observable.updateProgress(progress, newSize - lastSize);
+//												lastSize = newSize;
+//											}
+//										}
+//										catch (IOException e) {
+//											LOGGER.debug("IOException during file size monitoring. This is because the target file was not found yet: {}",
+//													e.getMessage());
+//										}
+//										catch (InterruptedException e) {
+//											LOGGER.debug("file size monitoring thread interrupted.");
+//											isInterrupted = true;
+//										}
+//									}
+//								}
+//							});
+//							fileSizeMon.start();
 
 							// Process the file
 							switch (mode) {
 							// TODO: Target directory must be empty!
 							case Copy:
-								Files.copy(src, dst, COPY_ATTRIBUTES);
+								//Files.copy(src, dst, COPY_ATTRIBUTES);
+								copy(observable, progress, src, dst);
 								break;
 							case Move:
 								try {
@@ -353,7 +361,8 @@ public final class UseCaseServiceImpl implements UseCaseService {
 								}
 								catch (AtomicMoveNotSupportedException e) {
 									LOGGER.debug("Atomic move not supported. Using normal move (copy/delete): {}", e);
-									Files.move(src, dst, COPY_ATTRIBUTES);
+									copy(observable, progress, src, dst);
+									Files.delete(src);
 								}
 								break;
 							default:
@@ -370,25 +379,56 @@ public final class UseCaseServiceImpl implements UseCaseService {
 							}
 						}
 					}
+
+					private void copy(ProgressObservable observable, Progress progress, Path src, Path dst) {
+						try {
+							final InputStream in = new FileInputStream(src.toFile());
+
+							//For Append the file.
+							//  OutputStream out = new FileOutputStream(f2,true);
+
+							//For Overwrite the file.
+							final OutputStream out = new FileOutputStream(dst.toFile());
+
+							final byte[] buf = new byte[1024 * 1024 * 100]; // 100 MB Buffer
+							int len;
+							while ((len = in.read(buf)) > 0) {
+								out.write(buf, 0, len);
+
+								// Update progress listeners
+								observable.updateProgress(progress, buf.length);
+							}
+							in.close();
+							out.close();
+						}
+						catch (FileNotFoundException ex) {
+							LOGGER.error(ex.getMessage() + " in the specified directory.");
+							// TODOC
+						}
+						catch (IOException e) {
+							LOGGER.error(e.getMessage());
+							// TODOC
+						}
+					}
 				});
 
 			}
 		}
 		catch (IOError e) {
-			throw UseCaseServiceException.createCopyMoveError((IOException) e.getCause(), mode);
+			throw UseCaseException.createCopyMoveError((IOException) e.getCause(), mode);
 		}
 		finally {
 			exec.shutdown();
 		}
 	}
 
-	private void saveProperty(String key, String value, String comment) throws UseCaseServiceException {
+	private void saveProperty(String key, String value, String comment) throws UseCaseException {
 		localProperties.setProperty(key, value);
 		try (final OutputStream propOut = new FileOutputStream(localPropertiesFile)) {
 			localProperties.store(propOut, comment);
 		}
 		catch (IOException e) {
-			throw UseCaseServiceException.createWriteErrorProperties(e);
+			throw UseCaseException.createWriteErrorProperties(e);
 		}
 	}
 
@@ -399,7 +439,7 @@ public final class UseCaseServiceImpl implements UseCaseService {
 	 * de.tyranus.poseries.usecase.UseCaseService#getFileSize(java.util.Set)
 	 */
 	@Override
-	public long getFileSize(Set<Path> filesToProcess) throws UseCaseServiceException {
+	public long getFileSize(Set<Path> filesToProcess) throws UseCaseException {
 		// Calculate the file size
 		long size = 0;
 		for (final Path file : filesToProcess) {
@@ -407,7 +447,7 @@ public final class UseCaseServiceImpl implements UseCaseService {
 				size += Files.size(file);
 			}
 			catch (IOException e) {
-				throw UseCaseServiceException.createFileSizeError(e);
+				throw UseCaseException.createFileSizeError(e);
 			}
 		}
 		return size;
@@ -423,7 +463,7 @@ public final class UseCaseServiceImpl implements UseCaseService {
 		return formatSize(fileSize, Dimension.Byte);
 	}
 
-	enum Dimension {
+	private enum Dimension {
 		Byte, kB, MB, GB
 	}
 
